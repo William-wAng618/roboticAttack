@@ -1,0 +1,14 @@
+{
+  "lr": "3e-3",
+  "server": "/home/tw9146/tw",
+  "device": 0,
+  "iter": 200000,
+  "accumulate": 1,
+  "bs": "6",
+  "warmup": 200,
+  "tags": "LRDecay WarmUp position",
+  "filterGripTrainTo1": false,
+  "patch_size": "3,70,70",
+  "wandb_project": "openvla_super_batch",
+  "tag_prefix": "70x70"
+}

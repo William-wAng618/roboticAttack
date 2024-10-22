@@ -1,0 +1,14 @@
+{
+  "lr": "2e-3",
+  "server": "/home/mxceec",
+  "device": 0,
+  "iter": 2000,
+  "accumulate": 1,
+  "bs": "6",
+  "warmup": 20,
+  "tags": "LRDecay WarmUp geometry libero_spatial",
+  "filterGripTrainTo1": false,
+  "patch_size": "3,50,50",
+  "wandb_project": "final_libero_spatial_openvla",
+  "dataset": "libero_spatial"
+}

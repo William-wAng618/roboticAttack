@@ -1,0 +1,548 @@
+import random
+from torchvision import transforms
+import numpy as np
+import torch
+import torch.nn.functional as F
+import torchvision
+
+
+def denormalize(images,mean,std):
+    images = images * std[None, :, None, None]
+    images = images + mean[None, :, None, None]
+    return images
+
+class RandomPatchTransform:
+    def __init__(self, device, resize_patch):
+        self.device = device
+        self.angle = 30
+        self.shx = 0.2
+        self.shy = 0.2
+        self.resize_patch = resize_patch
+
+    # Normalize
+    def normalize(self, images, mean, std):
+        images = images - mean[None, :, None, None]
+        images = images / std[None, :, None, None]
+        return images
+
+    def denormalize(self,images, mean, std):
+        images = images * std[None, :, None, None]
+        images = images + mean[None, :, None, None]
+        return images
+
+
+    # Geometry TRANSFORMATIONS
+    def rotation_matrix(self,theta):
+        theta = np.deg2rad(theta)
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+        return np.array([
+            [cos_theta, -sin_theta, 0],
+            [sin_theta, cos_theta, 0],
+            [0, 0, 1]
+        ], dtype=np.float32)
+
+    # def translation_matrix(self, tx, ty):
+    #     return np.array([
+    #         [1, 0, tx],
+    #         [0, 1, ty],
+    #         [0, 0, 1]
+    #     ], dtype=np.float32)
+
+    def shear_matrix(self,shx, shy):
+        return np.array([
+            [1, shx, 0],
+            [shy, 1, 0],
+            [0, 0, 1]
+        ], dtype=np.float32)
+
+    def combined_transform_matrix(self):
+        if np.random.rand() < 0.2:
+            return torch.tensor(np.eye(3, dtype=np.float32))
+        else:
+            angle = np.random.uniform(-self.angle, self.angle)
+            # tx = np.random.uniform(min_tx, max_tx)
+            # ty = np.random.uniform(min_ty, max_ty)
+            shx = np.random.uniform(-self.shx, self.shx)
+            shy = np.random.uniform(-self.shy, self.shy)
+
+            R = self.rotation_matrix(angle)
+            # T = translation_matrix(tx, ty)
+            S = self.shear_matrix(shx, shy)
+            # combined_matrix = np.dot(T, np.dot(S, R))
+            combined_matrix = np.dot(S, R)
+            return torch.tensor(combined_matrix)
+
+    # 应用仿射变换
+    def apply_affine_transform(self,image, transform_matrix):
+        if image.ndim == 4:
+            image = image.squeeze(0)
+        # 提取 2x3 矩阵
+        affine_matrix = transform_matrix[:2, :].unsqueeze(0)  # [1, 2, 3]
+
+        # 生成网格
+        grid = F.affine_grid(affine_matrix, image.unsqueeze(0).size(), align_corners=False)
+
+        # 应用网格
+        transformed_image = F.grid_sample(image.unsqueeze(0), grid, align_corners=False,padding_mode='border')
+
+        return transformed_image
+
+    def get_color_jitter_params(self, brightness_range=(0.9, 1.1), contrast_range=(0.9, 1.1), saturation_range=(0.9, 1.1),
+                            hue_range=(-0.1, 0.1)):
+        # 随机生成调整因子
+        brightness_factor = torch.FloatTensor(1).uniform_(*brightness_range).item()
+        contrast_factor = torch.FloatTensor(1).uniform_(*contrast_range).item()
+        saturation_factor = torch.FloatTensor(1).uniform_(*saturation_range).item()
+        hue_factor = torch.FloatTensor(1).uniform_(*hue_range).item()
+        return brightness_factor, contrast_factor, saturation_factor, hue_factor
+
+    # Color TRANSFORMATIONS
+    # Weak transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
+    # Medium transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)
+    # Strong transforms.ColorJitter(brightness=0.8, contrast=0.8, saturation=0.8, hue=0.2)
+    # def random_color_jitter(self,image, brightness_factor, contrast_factor, saturation_factor, hue_factor):
+    #     """
+    #     Random color dithering, including brightness, contrast, saturation and hue adjustments.
+    #
+    #     Args:
+    #         image (Tensor):  [C, H, W]
+    #         brightness_range (tuple):  (min_brightness, max_brightness)
+    #         contrast_range (tuple):  (min_contrast, max_contrast)
+    #         saturation_range (tuple):  (min_saturation, max_saturation)
+    #         hue_range (tuple):  (min_hue, max_hue)
+    #
+    #     Returns:
+    #         Tensor: Adjusted image
+    #     """
+    #
+    #
+    #     # 亮度调整
+    #     image = image * brightness_factor
+    #
+    #     # 对比度调整
+    #     mean = image.mean(dim=[1, 2], keepdim=True)
+    #     image = (image - mean) * contrast_factor + mean
+    #
+    #     # 饱和度调整
+    #     gray = image.mean(dim=0, keepdim=True)
+    #     image = (image - gray) * saturation_factor + gray
+    #
+    #     # 色调调整
+    #     hue = torch.tensor(hue_factor)  # 转换为 Tensor
+    #     hue = torch.clamp(hue, -0.5, 0.5)  # 使用 Number 类型参数
+    #     image = (image + hue) % 1.0
+    #
+    #     return image
+    # def apply_random_patch_batch(self, images, patch, mean, std):
+    #     """
+    #     random paste patch to images
+    #
+    #     param:
+    #     images (torch.Tensor):  list PIL images
+    #     patch (torch.Tensor):  [3, patch_height, patch_width] patch
+    #
+    #     return:
+    #     torch.Tensor: batch img with patch added
+    #     """
+    #
+    #     # 获取图像和补丁的尺寸
+    #     patch_channels, patch_height, patch_width = patch.shape
+    #
+    #     modified_images = []
+    #     # apply patch to each image in the batch
+    #     for i in range(len(images)):
+    #         # process org image, with no transform
+    #         temp_im = transforms.ToTensor()(images[i]).to(self.device)
+    #         if temp_im.ndim == 3:
+    #             temp_im = temp_im.unsqueeze(0)
+    #         temp_im = self.normalize(temp_im, mean=mean.to(self.device), std=std.to(self.device))
+    #         batch_size, img_channels, img_height, img_width = temp_im.shape
+    #
+    #         # process patch, with transform
+    #         scale = random.uniform(0.5, 1.5)
+    #         height, width = int(patch_height * scale), int(patch_width * scale)  # random scale patch
+    #         aug_patch = transforms.Resize((height, width))(patch)
+    #         aug_patch = self.normalize(aug_patch, mean=mean.to(self.device), std=std.to(self.device))
+    #
+    #
+    #         # color jitter transform
+    #         aug_patch = self.random_color_jitter(aug_patch,brightness_range=(0.8, 1.2), contrast_range=(0.8, 1.2), saturation_range=(0.8, 1.2),
+    #                         hue_range=(-0.1, 0.1))
+    #
+    #         # Geometry transform
+    #         affline_matrix = self.combined_transform_matrix()
+    #         aug_patch = self.apply_affine_transform(aug_patch, affline_matrix)
+    #
+    #         _, aug_patch_channels, aug_patch_height, aug_patch_width = aug_patch.shape
+    #
+    #         # 计算补丁可以放置的最大 x 和 y 位置
+    #         max_x = img_width - patch_width
+    #         max_y = img_height - patch_height
+    #
+    #         # 随机选择补丁的起始位置
+    #         x = random.randint(0, max_x)
+    #         y = random.randint(0, max_y)
+    #
+    #         # 将补丁粘贴到随机位置
+    #         temp_im[i, :, y:y + patch_height, x:x + patch_width] = patch
+    #         modified_images.append(temp_im)
+    #         # modified_images[i, :, y:y + patch_height, x:x + patch_width] = patch
+    #
+    #     return torch.cat(modified_images,dim=0)
+
+    # Color TRANSFORMATIONS
+    # Weak transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
+    # Medium transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)
+    # Strong transforms.ColorJitter(brightness=0.8, contrast=0.8, saturation=0.8, hue=0.2)
+    def random_color_jitter(self, image, brightness_factor, contrast_factor, saturation_factor, hue_factor):
+        """
+        Random color dithering, including brightness, contrast, saturation, and hue adjustments.
+        Only applies transformations to non-zero regions of the image.
+
+        Args:
+            image (Tensor):  [C, H, W] (image tensor)
+            brightness_factor (float): Brightness adjustment factor
+            contrast_factor (float): Contrast adjustment factor
+            saturation_factor (float): Saturation adjustment factor
+            hue_factor (float): Hue adjustment factor
+
+        Returns:
+            Tensor: Adjusted image
+        """
+
+        # 创建非零像素的掩码
+        non_zero_mask = image > -20
+        non_zero_pixels = image[non_zero_mask]
+
+        # 如果存在非零像素，进行计算和调整
+        if len(non_zero_pixels) > 0:
+            # brightness adjustment
+            non_zero_pixels = non_zero_pixels * brightness_factor
+
+            # contrast adjustment
+            non_zero_mean = non_zero_pixels.mean()
+            non_zero_pixels = (non_zero_pixels - non_zero_mean) * contrast_factor + non_zero_mean
+
+            # saturation adjustment
+            non_zero_gray = non_zero_pixels.mean(dim=0, keepdim=True)
+            non_zero_pixels = (non_zero_pixels - non_zero_gray) * saturation_factor + non_zero_gray
+
+            # hue adjustment
+            hue = torch.tensor(hue_factor, dtype=image.dtype)
+            non_zero_pixels = (non_zero_pixels + hue) % 1.0
+            image[non_zero_mask] = non_zero_pixels
+
+        return image
+
+
+    def apply_random_patch_batch(self, images, patch, mean, std,geometry,colorjitter):
+        """
+        random paste patch to images
+
+        param:
+        images (torch.Tensor):  list PIL images
+        patch (torch.Tensor):  [3, patch_height, patch_width] patch
+
+        return:
+        torch.Tensor: batch img with patch added
+        """
+
+        modified_images = []
+        # apply patch to each image in the batch
+        for im in images:
+            im = torchvision.transforms.ToTensor()(im).to(self.device)
+            img_channels, img_height, img_width = im.shape
+
+            canvas = torch.ones(img_channels, img_height, img_width).to(self.device) * -100
+
+            if self.resize_patch:
+                scale = random.uniform(0.61, 1.39) #~ 1%~5%
+                height, width = int(patch_height * scale), int(patch_width * scale)  # random scale patch
+                patch = transforms.Resize((height, width))(patch)
+
+            patch_channels, patch_height, patch_width = patch.shape
+
+            # # 补丁限制位置
+            # max_x = img_width - int(patch_width * scale)
+            # max_y = img_height - int(patch_height * scale)
+            #
+            # # 随机选择补丁的起始位置
+            # x = random.randint(0, max_x)
+            # y = random.randint(0, max_y)
+            # # 将补丁粘贴到随机位置
+            # canvas[:, y:y + int(patch_height * scale), x:x + int(patch_width * scale)] = patch
+
+            # 补丁限制位置
+            max_x = img_width - patch_width
+            max_y = img_height - patch_height
+
+            # 随机选择补丁的起始位置
+            x = random.randint(0, max_x)
+            y = random.randint(0, max_y)
+            # 将补丁粘贴到随机位置
+            canvas[:, y:y + patch_height, x:x + patch_width] = patch
+
+            if geometry:
+                # Geometry transform
+                affline_matrix = self.combined_transform_matrix().to(self.device)
+                canvas = self.apply_affine_transform(canvas, affline_matrix)
+
+            if colorjitter:
+                # Color transform
+                color_jitter_params = self.get_color_jitter_params()
+                canvas = self.random_color_jitter(canvas, *color_jitter_params)
+
+            im = torch.where(canvas < -20, im, canvas)
+            im0 = self.normalize(im, mean[0].to(self.device), std[0].to(self.device))
+            im1 = self.normalize(im, mean[1].to(self.device), std[1].to(self.device))
+
+            modified_images.append(torch.cat([im0,im1],dim=1))
+        return torch.cat(modified_images, dim=0)
+
+    def random_paste_patch(self, images, patch, mean, std):
+        """
+        random paste patch to images
+
+        param:
+        images (torch.Tensor):  list PIL images
+        patch (torch.Tensor):  [3, patch_height, patch_width] patch
+        return:
+        torch.Tensor: batch img with patch added
+        """
+
+        modified_images = []
+        for im in images:
+            im = torchvision.transforms.ToTensor()(im).to(self.device)
+            img_channels, img_height, img_width = im.shape
+
+            canvas = torch.ones(img_channels, img_height, img_width).to(self.device)*-100
+            patch_channels, patch_height, patch_width = patch.shape
+
+            # 随机选择补丁的起始位置
+            max_x = img_width - patch_width
+            max_y = img_height - patch_height
+            # 随机选择补丁的起始位置
+            x = random.randint(0, max_x)
+            y = random.randint(0, max_y)
+            # 将补丁粘贴到随机位置
+            canvas[:, y:y + patch_height, x:x + patch_width] = patch
+
+            im = torch.where(canvas != -100, canvas, im)
+            im0 = self.normalize(im, mean[0].to(self.device), std[0].to(self.device))
+            im1 = self.normalize(im, mean[1].to(self.device), std[1].to(self.device))
+
+            modified_images.append(torch.cat([im0,im1],dim=1))
+        return torch.cat(modified_images, dim=0)
+
+    def paste_patch_fix(self, images, patch, mean, std, inference=False):
+        """
+        random paste patch to images
+
+        param:
+        images (torch.Tensor):  list PIL images
+        patch (torch.Tensor):  [3, patch_height, patch_width] patch
+        return:
+        torch.Tensor: batch img with patch added
+        """
+        canvas_list = []
+        modified_images = []
+        for im in images:
+            im = torchvision.transforms.ToTensor()(im).to(self.device)
+            img_channels, img_height, img_width = im.shape
+
+            canvas = torch.ones(img_channels, img_height, img_width).to(self.device)*-100
+            patch_channels, patch_height, patch_width = patch.shape
+
+            # 随机选择补丁的起始位置
+
+            # center
+            # 随机选择补丁的起始位置
+            max_x = img_width - patch_width
+            max_y = img_height - patch_height
+
+            # max_x = 10
+            # max_y = 10
+            # 随机选择补丁的起始位置
+            x = random.randint(0, max_x)
+            y = random.randint(0, max_y)
+
+            # 将补丁粘贴到随机位置
+            canvas[:, y:y + patch_height, x:x + patch_width] = patch
+
+            im = torch.where(canvas != -100, canvas, im)
+            im0 = self.normalize(im, mean[0].to(self.device), std[0].to(self.device))
+            im1 = self.normalize(im, mean[1].to(self.device), std[1].to(self.device))
+
+            modified_images.append(torch.cat([im0,im1],dim=1))
+            canvas_list.append(canvas)
+        if inference:
+            return torch.cat(modified_images, dim=0), canvas_list
+        else:
+            return torch.cat(modified_images, dim=0)
+    def im_process(self, images, mean, std):
+        """
+        process images
+
+        param:
+        images (torch.Tensor):  list PIL images
+        return:
+        torch.Tensor: batch processed img
+        """
+        modified_images = []
+        for im in images:
+            im = torchvision.transforms.ToTensor()(im).to(self.device)
+            im0 = self.normalize(im, mean[0].to(self.device), std[0].to(self.device))
+            im1 = self.normalize(im, mean[1].to(self.device), std[1].to(self.device))
+            modified_images.append(torch.cat([im0,im1],dim=1))
+        return torch.cat(modified_images, dim=0)
+
+    def paste_patch_fix2(self, images, patch, mean, std):
+        """
+        random paste patch to images
+
+        param:
+        images (torch.Tensor):  list PIL images
+        patch (torch.Tensor):  [3, patch_height, patch_width] patch
+        return:
+        torch.Tensor: batch img with patch added
+        """
+
+        modified_images = []
+        for im in images:
+            im = torchvision.transforms.ToTensor()(im).to(self.device)
+            img_channels, img_height, img_width = im.shape
+
+            canvas = torch.ones(img_channels, img_height, img_width).to(self.device)*-100
+            patch_channels, patch_height, patch_width = patch.shape
+
+            # 随机选择补丁的起始位置
+
+            # center
+            # 随机选择补丁的起始位置
+            # max_x = img_width - patch_width
+            # max_y = img_height - patch_height
+
+            x = 10
+            y = 10
+
+            # 将补丁粘贴到随机位置
+            canvas[:, y:y + patch_height, x:x + patch_width] = patch
+
+            im = torch.where(canvas != -100, canvas, im)
+            im0 = self.normalize(im, mean[0].to(self.device), std[0].to(self.device))
+            im1 = self.normalize(im, mean[1].to(self.device), std[1].to(self.device))
+
+            modified_images.append(torch.cat([im0,im1],dim=1))
+        return torch.cat(modified_images, dim=0)
+
+    def simulation_paste_patch(self,image,patch,random=False,geometry=False,colorjitter=False):
+        """
+        random paste patch to images
+
+        param:
+        image (numpy.ndarray):  ndarray image [224,224,3]
+        patch (torch.Tensor):  [3, patch_height, patch_width] patch
+        return: torch.Tensor: batch img with patch added
+        """
+        image = torch.from_numpy(image)
+        image = image.permute(2,0,1)
+        # paste patch
+        img_channels, img_height, img_width = image.shape
+        patch_channels, patch_height, patch_width = patch.shape
+        if random:
+            max_x = img_width - patch_width
+            max_y = img_height - patch_height
+            x = random.randint(0, max_x)
+            y = random.randint(0, max_y)
+        else:
+            x,y = 0,0
+        patch = torch.from_numpy(np.asarray(torchvision.transforms.ToPILImage()(patch))).permute(2,0,1)
+        image[:,y:y+patch_height,x:x+patch_width]=patch
+        image = image.permute(1,2,0).numpy()
+        return image
+
+
+    def simulation_random_patch(self, image, patch, geometry=False,colorjitter=False,angle=1,shx=0.1,shy=0.1):
+        """
+        random paste patch to images
+
+        param:
+        image (numpy.ndarray):  ndarray image [224,224,3]
+        patch (torch.Tensor):  [3, patch_height, patch_width] patch
+
+        return:
+        torch.Tensor: batch img with patch added
+        """
+        image = torch.from_numpy(image)
+        image = image.permute(2,0,1)
+        img_channels, img_height, img_width = image.shape
+
+        canvas = torch.ones(img_channels, img_height, img_width).to(self.device) * -100
+        patch_channels, patch_height, patch_width = patch.shape
+        patch = torch.from_numpy(np.asarray(torchvision.transforms.ToPILImage()(patch))).permute(2, 0, 1)
+
+        x = 160
+        y = 80
+        # 将补丁粘贴到随机位置
+        canvas[:, y:y + patch_height, x:x + patch_width] = patch
+
+        if geometry:
+            R = self.rotation_matrix(angle)
+            # T = translation_matrix(tx, ty)
+            S = self.shear_matrix(shx, shy)
+            # combined_matrix = np.dot(T, np.dot(S, R))
+            combined_matrix = np.dot(S, R)
+            affline_matrix = torch.tensor(combined_matrix)
+            canvas = self.apply_affine_transform(canvas, affline_matrix)
+
+        image = torch.where(canvas < 0, image, canvas)
+        return image.squeeze(0).permute(1,2,0).numpy().astype(np.uint8)
+    def simulation_random_patch_resize(self, image, patch, geometry=False,colorjitter=False,angle=1,shx=0.1,shy=0.1):
+        """
+        random paste patch to images
+
+        param:
+        image (numpy.ndarray):  ndarray image [224,224,3]
+        patch (torch.Tensor):  [3, patch_height, patch_width] patch
+
+        return:
+        torch.Tensor: batch img with patch added
+        """
+        image = torch.from_numpy(image)
+        image = image.permute(2,0,1)
+        img_channels, img_height, img_width = image.shape
+
+        canvas = torch.ones(img_channels, img_height, img_width).to(self.device) * -100
+        patch = torchvision.transforms.ToPILImage()(patch)
+        patch = torchvision.transforms.Resize((32,32))(patch)
+        patch = torch.from_numpy(np.asarray(patch)).permute(2, 0, 1)
+        patch_channels, patch_height, patch_width = patch.shape
+
+        x = 168
+        y = 128
+        # 将补丁粘贴到随机位置
+        canvas[:, y:y + patch_height, x:x + patch_width] = patch
+
+        if geometry:
+            R = self.rotation_matrix(angle)
+            # T = translation_matrix(tx, ty)
+            S = self.shear_matrix(shx, shy)
+            # combined_matrix = np.dot(T, np.dot(S, R))
+            combined_matrix = np.dot(S, R)
+            affline_matrix = torch.tensor(combined_matrix)
+            canvas = self.apply_affine_transform(canvas, affline_matrix)
+
+        image = torch.where(canvas < 0, image, canvas)
+        return image.squeeze(0).permute(1,2,0).numpy().astype(np.uint8)
+if __name__ == '__main__':
+    from PIL import Image
+    import torchvision
+    random_patch_transform = RandomPatchTransform(device='cpu')
+    im = Image.open("/Users/taowenwang/PycharmProjects/demo/openvla-main/0dataprocess/test.png")
+    patch = torch.rand(3,50,50)
+    # img = random_patch_transform.simulation_random_patch(np.asarray(im), patch, geometry=True,colorjitter=False,angle=30,shx=-0.15,shy=-0.1)
+    img = random_patch_transform.simulation_random_patch_resize(np.asarray(im), patch, geometry=True,colorjitter=False,angle=35,shx=-0.15,shy=-0.1)
+    print(np.min(img))
+    img = Image.fromarray(img)
+    img.show()

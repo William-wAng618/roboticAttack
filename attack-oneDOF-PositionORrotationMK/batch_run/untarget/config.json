@@ -1,0 +1,14 @@
+{
+  "lr": "2e-3",
+  "server": "/home/tw9146/tw",
+  "device": 0,
+  "iter": 30000,
+  "accumulate": 1,
+  "bs": "6",
+  "warmup": 200,
+  "tags": "LRDecay WarmUp geometry",
+  "filterGripTrainTo1": false,
+  "patch_size": "3,50,50",
+  "wandb_project": "openvla_relativeDistance_guide",
+  "tag_prefix": "50x50"
+}
