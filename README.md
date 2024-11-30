@@ -88,12 +88,26 @@ Please download [this](https://huggingface.co/datasets/openvla/modified_libero_r
     |       └──libero_goal_no_noops
     |       └──libero_10_no_noops
 ## 2. Adversarial Patch Generation
+(a) Target Manipulation Attack (TMA)
+```bash
+bash scripts/run_TMA.sh
+```
+
+(b) Untargeted Action Discrepancy (UADA)
+```bash
+bash scripts/run_UADA.sh
+```
+
+(c) Untargeted Position-aware Attack (UPA)
+```bash
+bash scripts/run_UPA.sh
+```
 
 ---
 ## 2.Evaluating OpenVLA
 
 ```bash
-git clone git@hf.co:datasets/openvla/modified_libero_rlds
+bash scripts/run_simulation.sh
 ```
 
 ---
