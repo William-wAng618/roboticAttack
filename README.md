@@ -22,7 +22,7 @@ Built on top of [OpenVLA](https://github.com/openvla/openvla), a remarkable gene
 ---
 
 ## Latest Updates
-- [2024-11-26] Initial release
+- [2024-11-26] Pre release
 
 
 ---
