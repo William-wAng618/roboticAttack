@@ -123,15 +123,3 @@ High-level overview of repository/project file-tree:
 
 ---
 
-## Citation
-
-If you find our code or models useful in your work, please cite [our paper](https://arxiv.org/abs/2406.09246):
-
-```bibtex
-@article{wang2024exploring,
-    title={Exploring the Adversarial Vulnerabilities of Vision-Language-Action Models in Robotics},
-    author={Taowen Wang and Dongfang Liu and James Chenhao Liang and Wenhao Yang and Qifan Wang and Cheng Han and Jiebo Luo and Ruixiang Tang},
-    journal = {arXiv preprint arXiv:2411.13587},
-    year={2024}
-} 
-```
