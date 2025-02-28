@@ -409,6 +409,20 @@ class OpenVLAAttacker(object):
 
         total_loss = self.alpha*angle_loss + self.belta*UAD
         return total_loss, angle_loss.item(), UAD.item()
+        
+    def mask_labels(self, labels, maskidx):
+        mask = labels > self.action_tokenizer.action_token_begin_idx
+        masked_labels = labels[mask]
+        masked_labels = masked_labels.view(masked_labels.shape[0] // 7, 7)
+        for idx in range(7):
+            if idx not in maskidx:
+                masked_labels[:, idx] = -100
+        newlabels = []
+        for j in range(labels.shape[0]):
+            temp_label = labels[j]
+            temp_label[temp_label > 2] = masked_labels[j]
+            newlabels.append(temp_label.unsqueeze(0))
+        return torch.cat(newlabels, dim=0)
 
 
 
