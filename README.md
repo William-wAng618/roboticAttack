@@ -1,7 +1,7 @@
 # Exploring the Adversarial Vulnerabilities of Vision-Language-Action Models in Robotics
 
 
-[![arXiv](https://img.shields.io/badge/arXiv-2406.09246-df2a2a.svg?style=for-the-badge)](https://www.arxiv.org/abs/2411.13587)
+# [![arXiv](https://img.shields.io/badge/arXiv-2406.09246-df2a2a.svg?style=for-the-badge)](https://www.arxiv.org/abs/2411.13587)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2.0-EE4C2C.svg?style=for-the-badge&logo=pytorch)](https://pytorch.org/get-started/locally/)
 [![Python](https://img.shields.io/badge/python-3.10-blue?style=for-the-badge)](https://www.python.org)
 [![License](https://img.shields.io/github/license/TRI-ML/prismatic-vlms?style=for-the-badge)](LICENSE)
@@ -22,6 +22,7 @@ Built on top of [OpenVLA](https://github.com/openvla/openvla), a remarkable gene
 ---
 
 ## Latest Updates
+- [2025-03-08] Upate UADA, bug fix, release new ver. of Paper
 - [2024-11-26] Pre release
 
 
