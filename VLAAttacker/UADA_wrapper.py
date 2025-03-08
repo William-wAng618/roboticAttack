@@ -10,7 +10,7 @@ import wandb
 import argparse
 import random
 import uuid
-from white_patch.UADA2 import OpenVLAAttacker
+from white_patch.UADA import OpenVLAAttacker
 from white_patch.openvla_dataloader import get_dataloader
 def set_seed(seed: int):
     random.seed(seed)
