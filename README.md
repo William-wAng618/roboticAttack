@@ -100,7 +100,23 @@ bash scripts/run_UADA.sh
 
 (b2) DDP ver For UADA
 ```bash
-bash scripts/run_UADA_ddp.sh
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 --master_port=29501 VLAAttacker/UADA_wrapper3_ddp.py \
+    --maskidx 0 \
+    --lr 1e-3 \
+    --iter 2000 \
+    --MSE_weights 5 \
+    --accumulate 1 \                  
+    --bs 8 \                            
+    --warmup 20 \                        
+    --tags XXX \                         
+    --geometry True \                    
+    --patch_size 3,50,50 \               
+    --wandb_project your_wandb_project \ 
+    --wandb_entity your_wandb_entity \   
+    --innerLoop 50 \                     
+    --dataset bridge_orig \              
+    --resize_patch False \               
+    --reverse_direction True           
 ```
 
 (c) Untargeted Position-aware Attack (UPA)
