@@ -39,7 +39,44 @@ class RandomPatchTransform:
             [shy, 1, 0],
             [0, 0, 1]
         ], dtype=np.float32)
+        
+   def simulation_random_patch(self, image, patch, geometry=False,colorjitter=False,angle=1,shx=0.1,shy=0.1,position=(0,0)):
+        """
+        random paste patch to images
 
+        param:
+        image (numpy.ndarray):  ndarray image [224,224,3]
+        patch (torch.Tensor):  [3, patch_height, patch_width] patch
+
+        return:
+        torch.Tensor: batch img with patch added
+        """
+        image = torch.from_numpy(image)
+        image = image.permute(2,0,1)
+        img_channels, img_height, img_width = image.shape
+
+        canvas = torch.ones(img_channels, img_height, img_width).to(self.device) * -100
+        patch_channels, patch_height, patch_width = patch.shape
+        patch = torch.from_numpy(np.asarray(torchvision.transforms.ToPILImage()(patch))).permute(2, 0, 1)
+
+        # x = 160
+        # y = 80
+
+        x,y = position[0],position[1]
+        canvas[:, y:y + patch_height, x:x + patch_width] = patch
+
+        if geometry:
+            R = self.rotation_matrix(angle)
+            # T = translation_matrix(tx, ty)
+            S = self.shear_matrix(shx, shy)
+            # combined_matrix = np.dot(T, np.dot(S, R))
+            combined_matrix = np.dot(S, R)
+            affline_matrix = torch.tensor(combined_matrix)
+            canvas = self.apply_affine_transform(canvas, affline_matrix)
+
+        image = torch.where(canvas < 0, image, canvas)
+        return image.squeeze(0).permute(1,2,0).numpy().astype(np.uint8)
+    
     def combined_transform_matrix(self):
         if np.random.rand() < 0.2:
             return torch.tensor(np.eye(3, dtype=np.float32))
