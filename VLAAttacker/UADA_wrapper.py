@@ -9,7 +9,9 @@ import numpy as np
 import wandb
 import argparse
 import random
-
+import uuid
+from white_patch.UADA2 import OpenVLAAttacker
+from white_patch.openvla_dataloader import get_dataloader
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -22,12 +24,8 @@ def set_seed(seed: int):
 
 
 def main(args):
-    import uuid
+    pwd = os.getcwd()
     exp_id = str(uuid.uuid4())
-    import sys
-    sys.path.append(f"{args.server}/VLAAttacker/white_patch")
-    from UADA import OpenVLAAttacker
-    from openvla_dataloader import get_bridge_dataloader,get_dataloader
     if  "bridge_orig" in args.dataset:
         vla_path = "openvla/openvla-7b"
     elif "libero_spatial" in args.dataset:
@@ -44,12 +42,12 @@ def main(args):
     target = ''
     for i in args.maskidx:
         target += str(i)
-    name = f"{args.dataset}_{vla_path}_reverse_direction{args.reverse_direction}_GA{args.accumulate}_lr{format(args.lr, '.0e')}_iter{args.iter}_warmup{args.warmup}_filterGripTrainTo1{args.filterGripTrainTo1}_target{target}_inner_loop{args.innerLoop}_geometry{args.geometry}_patch_size{args.patch_size}_seed42-{exp_id}"
+    name = f"{args.dataset}_modifyLabel_MSEDistance_lr{format(args.lr, '.0e')}_iter{args.iter}_warmup{args.warmup}_target{target}_inner_loop{args.innerLoop}_patch_size{args.patch_size}_seed42-{exp_id}"
     if args.wandb_project != "false":
         wandb_run = wandb.init(entity=args.wandb_entity, project=args.wandb_project,name=name, tags=args.tags)
         wandb.config = {"iteration":args.iter, "learning_rate": args.lr, "attack_target": args.maskidx,"accumulate_steps":args.accumulate}
     print(f"exp_id:{exp_id}")
-    path = f"{args.server}/run/white_patch_attack/{exp_id}"
+    path = f"{pwd}/run/UADA/{exp_id}"
 
     AutoConfig.register("openvla", OpenVLAConfig)
     AutoProcessor.register(OpenVLAConfig, PrismaticProcessor)
@@ -66,8 +64,8 @@ def main(args):
     device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
     vla = vla.to(device)
     os.makedirs(path, exist_ok=True)
-    train_dataloader, val_dataloader = get_dataloader(batch_size=args.bs,server=args.server,dataset=args.dataset,vla_path=vla_path)
-    openVLA_Attacker = OpenVLAAttacker(vla, processor, path,optimizer="adamW", resize_patch=args.resize_patch,alpha=args.alpha,belta=args.belta)
+    train_dataloader, val_dataloader = get_dataloader(batch_size=args.bs,dataset=args.dataset)
+    openVLA_Attacker = OpenVLAAttacker(vla, processor, path,optimizer="adamW", resize_patch=args.resize_patch)
 
     # patch 224x224
     # patch_size=[3,22,22] - 1%
@@ -83,21 +81,19 @@ def main(args):
                                                filterGripTrainTo1=args.filterGripTrainTo1,
                                                geometry=args.geometry,
                                                innerLoop=args.innerLoop,
-                                               reverse_direction=args.reverse_direction,
                                                args=args)
 
     print("Attack done!")
 def arg_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--maskidx',default='0,1,2', type=list_of_ints)
-    parser.add_argument('--lr',default=2e-3, type=float)
-    parser.add_argument('--server',default="xxx", type=str,help='Prefix of the server path')
-    parser.add_argument('--device',default=0, type=int)
-    parser.add_argument('--iter',default=2000, type=int)
+    parser.add_argument('--maskidx',default='0', type=list_of_ints)
+    parser.add_argument('--lr',default=1e-3, type=float)
+    parser.add_argument('--device',default=1, type=int)
+    parser.add_argument('--iter',default=2000, type=int) # 266933
     parser.add_argument('--accumulate',default=1, type=int)
     parser.add_argument('--bs',default=8, type=int)
     parser.add_argument('--warmup',default=20, type=int)
-    parser.add_argument('--tags',nargs='+', default=["untarget-distance-guide","position","50x50","alpha0beta04","kgcoe0"])
+    parser.add_argument('--tags',nargs='+', default=[""])
     parser.add_argument('--filterGripTrainTo1', type=str2bool, nargs='?',default=False,
                         help='Remove the gripper 0 traning samples during the attack of target at grip to 0')
     parser.add_argument('--geometry', type=str2bool, nargs='?',default=True,
@@ -109,8 +105,6 @@ def arg_parser():
     parser.add_argument('--dataset', default="bridge_orig", type=str)
     parser.add_argument('--resize_patch', type=str2bool, default=False)
     parser.add_argument('--reverse_direction', type=str2bool, default=True)
-    parser.add_argument('--alpha', type=float, default=0)
-    parser.add_argument('--belta', type=float, default=1)
     return parser.parse_args()
 
 def list_of_ints(arg):
@@ -128,5 +122,5 @@ def str2bool(value):
 
 if __name__ == "__main__":
     args = arg_parser()
-    print(f"Paramters:\n maskidx:{args.maskidx}\n lr:{args.lr} \n server:{args.server} \n device:{args.device} \ntags:{args.tags}")
+    print(f"Paramters:\n maskidx:{args.maskidx}\n lr:{args.lr} \n device:{args.device} \ntags:{args.tags}")
     main(args)
