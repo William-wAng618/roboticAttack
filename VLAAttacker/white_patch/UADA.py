@@ -9,11 +9,14 @@ import matplotlib.pyplot as plt
 import wandb
 import random
 import torch.nn.functional as F
-from appply_random_transform import RandomPatchTransform
+from white_patch.appply_random_transform import RandomPatchTransform
+# from VLAAttacker.white_patch.appply_random_transform import RandomPatchTransform
 from tqdm import tqdm
 import os
 import transformers
 import pickle
+# torch.backends.cudnn.benchmark = True
+# torch.backends.cudnn.deterministic = False
 IGNORE_INDEX = -100
 
 def normalize(images,mean,std):
@@ -28,9 +31,9 @@ def denormalize(images,mean,std):
 
 
 class OpenVLAAttacker(object):
-    def __init__(self, vla, processor, save_dir="", optimizer="pgd",resize_patch=False,alpha=0.5,belta=0.5):
+    def __init__(self, vla, processor, save_dir="", optimizer="pgd",resize_patch=False):
         self.vla = vla.eval()
-        self.vla.vision_backbone_requires_grad = True
+        # self.vla.vision_backbone_requires_grad = True
         self.processor = processor
         self.action_tokenizer = ActionTokenizer(self.processor.tokenizer)
         self.prompt_builder = PurePromptBuilder("openvla")
@@ -49,13 +52,11 @@ class OpenVLAAttacker(object):
         self.min_val_avg_L1_loss = 1000000
         self.max_relative_distance = -1000000
         self.reverse_direction_loss = 100000
-        self.alpha = alpha
-        self.belta = belta
-        print(f"alpha: {self.alpha}, belta: {self.belta}")
         self.randomPatchTransform = RandomPatchTransform(self.vla.device,resize_patch)
         self.mean = [torch.tensor([0.484375, 0.455078125, 0.40625]), torch.tensor([0.5, 0.5, 0.5])]
         self.std = [torch.tensor([0.228515625, 0.2236328125, 0.224609375]), torch.tensor([0.5, 0.5, 0.5])]
         self.optimizer = optimizer
+        self.MSE_Distance_best = 10000
 
         self.input_sizes = [[3, 224, 224], [3, 224, 224]]
         self.tvf_resize_params = [
@@ -93,13 +94,12 @@ class OpenVLAAttacker(object):
                                   patch_size=[3, 50, 50], lr=1 / 255, accumulate_steps=1, maskidx=[], warmup=20,
                                   filterGripTrainTo1=False, geometry=False,innerLoop=1,args=None):
         self.val_CE_loss = []
-        self.val_L1_loss = []
-        self.val_ASR = []
+        self.val_MSE_Distance = []
+        self.val_UAD = []
         self.train_CE_loss = []
-        self.val_relative_distance = []
-        angle_loss=0
-        distance_loss = 0
-        log_patch_grad = 0
+        self.train_MSE_distance_loss = []
+        self.train_UAD = []
+
 
         patch = torch.rand(patch_size).to(self.vla.device)
         patch.requires_grad_(True)
@@ -126,8 +126,9 @@ class OpenVLAAttacker(object):
                 attention_mask = data["attention_mask"].to(self.vla.device)
                 input_ids = data["input_ids"].to(self.vla.device)
 
-            print("masking labels...")
+            # print("masking labels...")
             labels = self.mask_labels(labels, maskidx)
+
 
             for inner_loop in range(innerLoop):
                 if geometry:
@@ -142,24 +143,21 @@ class OpenVLAAttacker(object):
                     labels=labels,
                 )
                 celoss = output.loss
-                loss, angle_loss, distance_loss = self.weighted_loss(output.logits, labels,maskidx)
-                loss.backward()
-                if self.optimizer == "adamW":
-                    if (i + 1) % accumulate_steps == 0 or (i + 1) == len(train_dataloader):
-                        torch.nn.utils.clip_grad_norm_([patch], max_norm=5 * 6e-4*torch.tensor(patch.shape).prod().sqrt().item(), norm_type=2)
-                        log_patch_grad = patch.grad.detach().mean().item()
-                        optimizer.step()
-                        patch.data = patch.data.clamp(0, 1)
-                        optimizer.zero_grad()
-                        self.vla.zero_grad()
-                        torch.cuda.empty_cache()
-                elif self.optimizer == "pgd":
-                    if (i + 1) % accumulate_steps == 0 or (i + 1) == len(train_dataloader):
-                        loss.backward()
-                        log_patch_grad = patch.grad.detach().mean().item()
-                        patch.data = (patch.data - lr * patch.grad.detach().sign()).clamp(0, 1)
-                        self.vla.zero_grad()
-                        patch.grad.zero_()
+                MSE_Distance, UAD = self.weighted_loss(output.logits, labels,maskidx)
+                MSE_Distance = MSE_Distance + 1/celoss
+                MSE_Distance.backward()
+                self.train_CE_loss.append(celoss.item())
+                self.train_MSE_distance_loss.append(MSE_Distance.item())
+                self.train_UAD.append(UAD.item())
+                # if (i + 1) % accumulate_steps == 0 or (i + 1) == len(train_dataloader):
+                # torch.nn.utils.clip_grad_norm_([patch], max_norm=5 * 6e-4*torch.tensor(patch.shape).prod().sqrt().item(), norm_type=2)
+                log_patch_grad = patch.grad.detach().mean().item()
+                optimizer.step()
+                patch.data = patch.data.clamp(0, 1)
+                optimizer.zero_grad()
+                self.vla.zero_grad()
+                torch.cuda.empty_cache()
+
 
             if self.optimizer == "adamW":
                 if (i + 1) % accumulate_steps == 0 or (i + 1) == len(train_dataloader):
@@ -181,32 +179,27 @@ class OpenVLAAttacker(object):
             train_logdata = {"TRAIN_attack_loss(CE)": celoss.item(),
                             "TRAIN_patch_gradient": log_patch_grad,
                             "TRAIN_LR": optimizer.param_groups[0]["lr"],
-                            "TRAIN_ANGLE_LOSS": angle_loss,
-                            "TRAIN_DISTANCE_LOSS":distance_loss}
+                            "TRAIN_attack_loss (MSE_Distance)": MSE_Distance.item(),
+                            "TRAIN_UAD":UAD}
             for key, value in train_relative_distance.items():
                 property_name = f"train_rd_{key}"
                 train_logdata[property_name] = sum(value) / len(value)
             if args.wandb_project != "false":
                 wandb.log(train_logdata,step=i)
-            self.train_CE_loss.append(loss.item())
 
             if i % 100 == 0:
                 self.plot_loss()
 
             if i % 100 == 0:
                 avg_CE_loss = 0
-                avg_L1_loss = 0
                 val_num_sample = 0
-                success_attack_num = 0
+                avg_MSE_Distance = 0
+                avg_UAD = 0
                 relative_distance = {f"{idx}": [] for idx in maskidx}
-                avg_relative_distance = 0
-                avg_angle_loss = 0
-                avg_distance_loss = 0
-                avg_reserve_loss = 0
                 print("evaluating...")
                 torch.cuda.empty_cache()
                 with torch.no_grad():
-                    for j in tqdm(range(100)):
+                    for j in tqdm(range(1000)):
                         try:
                             data = next(val_iterator)
                         except StopIteration:
@@ -230,7 +223,8 @@ class OpenVLAAttacker(object):
                             pixel_values=modified_images.to(torch.bfloat16).to(self.vla.device),
                             labels=labels,
                         )
-                        val_loss, val_angle_loss, val_distance_loss = self.weighted_loss(output.logits, labels,maskidx)
+                        # val_loss, val_angle_loss, val_distance_loss = self.weighted_loss(output.logits, labels, maskidx)
+                        val_MSE_Distance, val_UAD = self.weighted_loss(output.logits, labels, maskidx)
                         action_logits = output.logits[:,
                                         self.vla.vision_backbone.featurizer.patch_embed.num_patches: -1]
                         action_preds = action_logits.argmax(dim=2)
@@ -245,26 +239,23 @@ class OpenVLAAttacker(object):
                         relative_distance = self.calculate_relative_distance(continuous_actions_pred,
                                                                              continuous_actions_gt, maskidx,
                                                                              relative_distance)
-                        avg_angle_loss += val_angle_loss
-                        avg_distance_loss += val_distance_loss
-                        avg_reserve_loss += val_loss
+                        avg_MSE_Distance += val_MSE_Distance.item()
+                        avg_UAD += val_UAD.item()
+                        avg_CE_loss += output.loss.item()
                     torch.cuda.empty_cache()
-                    avg_angle_loss /= val_num_sample
-                    avg_distance_loss /= val_num_sample
-                    avg_reserve_loss /= val_num_sample
+                    avg_MSE_Distance /= val_num_sample
+                    avg_UAD /= val_num_sample
+                    avg_CE_loss/= val_num_sample
                     log_data={}
-                    log_data["val_reverse_direction_loss"] = avg_reserve_loss
-                    log_data["val_angle_loss"] = avg_angle_loss
-                    log_data["val_distance_loss"] = avg_distance_loss
+                    log_data["VAL_MSE_Distance"] = avg_MSE_Distance
+                    log_data["VAL_UAD"] = val_UAD
                     for key, value in relative_distance.items():
                         property_name = f"val_rd_{key}"
                         log_data[property_name] = sum(value) / len(value)
-                        avg_relative_distance += sum(value) / len(value)
-                    log_data["avg_relative_distance"] = avg_relative_distance
                     if args.wandb_project != "false":
                         wandb.log(log_data,step=i)
-                    if avg_reserve_loss.item() < self.reverse_direction_loss:
-                        self.reverse_direction_loss = avg_reserve_loss.item()
+                    if avg_MSE_Distance < self.MSE_Distance_best:
+                        self.MSE_Distance_best = avg_MSE_Distance
                         temp_save_dir = os.path.join(self.save_dir, f"{str(i)}")
                         os.makedirs(temp_save_dir, exist_ok=True)
                         torch.save(patch.detach().cpu(), os.path.join(temp_save_dir, "patch.pt"))
@@ -286,14 +277,20 @@ class OpenVLAAttacker(object):
                     os.makedirs(val_related_file_path, exist_ok=True)
                     modified_images = self.randomPatchTransform.denormalize(
                         modified_images[:, 0:3, :, :].detach().cpu(), mean=self.mean[0], std=self.std[0])
+                    # upload last image to wandb
+                    pil_imgs = []
+                    for o in range(modified_images.shape[0]):
+                        pil_img = torchvision.transforms.ToPILImage()(modified_images[o, :, :, :])
+                        pil_img.save(os.path.join(val_related_file_path, f"{str(o)}.png"))
+                        pil_imgs.append(pil_img)
+                    if args.wandb_project != "false":
+                        wandb.log({"Last_Step_AdvImg": [wandb.Image(pil_img) for pil_img in pil_imgs]})
                 self.val_CE_loss.append(avg_CE_loss)
-                self.val_L1_loss.append(avg_L1_loss)
-                self.val_ASR.append(success_attack_num / val_num_sample)
-                self.avg_angle_loss.append(avg_angle_loss / val_num_sample)
-                self.avg_distance_loss.append(avg_distance_loss / val_num_sample)
-                self.avg_reserve_loss.append(avg_reserve_loss / val_num_sample)
+                self.val_MSE_Distance.append(avg_MSE_Distance)
+                self.val_UAD.append(avg_UAD)
                 self.save_info(path=self.save_dir)
                 torch.cuda.empty_cache()
+                # torch.cuda.reset_peak_memory_stats()
 
     def modifiy_labels(self, labels,
                        target_action={"0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8}):
@@ -342,23 +339,18 @@ class OpenVLAAttacker(object):
         return labels, attention_mask, input_ids, pixel_values
 
     def save_info(self, path):
-        with open(os.path.join(path, 'val_relative_distance.pkl'), 'wb') as file:
-            pickle.dump(self.val_relative_distance, file)
-        with open(os.path.join(path, 'val_CE_loss.pkl'), 'wb') as file:
-            pickle.dump(self.val_CE_loss, file)
-        with open(os.path.join(path, 'val_L1_loss.pkl'), 'wb') as file:
-            pickle.dump(self.val_L1_loss, file)
-        with open(os.path.join(path, 'val_ASR.pkl'), 'wb') as file:
-            pickle.dump(self.val_ASR, file)
         with open(os.path.join(path, 'train_CE_loss.pkl'), 'wb') as file:
             pickle.dump(self.train_CE_loss, file)
-        with open(os.path.join(path, 'val_avg_angle_loss.pkl'), 'wb') as file:
-            pickle.dump(self.avg_angle_loss, file)
-        with open(os.path.join(path, 'val_avg_distance_loss.pkl'), 'wb') as file:
-            pickle.dump(self.avg_distance_loss, file)
-        with open(os.path.join(path, 'val_avg_reserve_loss.pkl'), 'wb') as file:
-            pickle.dump(self.avg_reserve_loss, file)
-
+        with open(os.path.join(path, 'train_MSE_distance_loss.pkl'), 'wb') as file:
+            pickle.dump(self.train_MSE_distance_loss, file)
+        with open(os.path.join(path, 'train_UAD.pkl'), 'wb') as file:
+            pickle.dump(self.train_UAD, file)
+        with open(os.path.join(path, 'val_CE_loss.pkl'), 'wb') as file:
+            pickle.dump(self.val_CE_loss, file)
+        with open(os.path.join(path, 'val_MSE_Distance.pkl'), 'wb') as file:
+            pickle.dump(self.val_MSE_Distance, file)
+        with open(os.path.join(path, 'val_UAD.pkl'), 'wb') as file:
+            pickle.dump(self.val_UAD, file)
     def calculate_relative_distance(self,pred,gt,maskidx,relative_distance):
         pred = pred.clone().view(pred.shape[0]//len(maskidx),len(maskidx))
         gt = gt.clone().view(gt.shape[0]//len(maskidx),len(maskidx))
@@ -376,53 +368,52 @@ class OpenVLAAttacker(object):
                 relative_distance[f"{str(maskidx[idx2])}"].append(temp_relative_distance.item())
         return relative_distance
 
-
-    def weighted_loss(self, logits, labels,maskid):
-        temp_label = labels[:,1:].to(labels.device) # (bs,seq_len)
-        action_mask = temp_label!= -100
-        temp_logits = logits[:,:,31744:32000] # (bs,seq_len,256) only consider the 256 classes for the target class
-        action_logits = temp_logits[:,self.vla.vision_backbone.featurizer.patch_embed.num_patches: -1]
-        reweigh = torch.arange(1,257).to(logits.device) # [1,2,3...,256]
-        temp_prob = F.softmax(action_logits,dim=-1) # [bs,seq_len,256]
-        reweighted_prob = (temp_prob * reweigh).sum(dim=-1)  # [bs,seq_len]
-        xyz_reweigthed = torch.cat([label[action_mask[i]].unsqueeze(0) for i, label in enumerate(reweighted_prob)],dim=0)
-        xyz_reweigthed = torch.cat([xyz_reweigthed[:,i].unsqueeze(1) for i in maskid],dim=1)
-        xyz_label = torch.cat([label[action_mask[i]].unsqueeze(0) for i, label in enumerate(temp_label)],dim=0)-31743
-        xyz_label = torch.cat([xyz_label[:,i].unsqueeze(1) for i in maskid],dim=1)
-        xyz_reweigthed = (xyz_reweigthed-1)/(255)
-        xyz_label = (xyz_label-1)/(255)
-
-        cosine_sim = F.cosine_similarity(xyz_reweigthed, xyz_label, dim=1)
-        angle_loss = (cosine_sim + 1).mean()
-        relative_distance = 0
-        for x in range(xyz_reweigthed.shape[0]):
-            for y in range(xyz_reweigthed.shape[1]):
-                upper_bound = 1
-                lower_bound = 0
-                distance_to_upper = upper_bound - xyz_label[x,y]
-                distance_to_lower = xyz_label[x,y] - lower_bound
-                max_boundary_distance = max(distance_to_upper, distance_to_lower)
-                distance_to_anchor = abs(xyz_reweigthed[x,y] - xyz_label[x,y])
-                relative_distance += distance_to_anchor / max_boundary_distance
-        UAD = 1/(relative_distance+1e-3)
-
-
-        total_loss = self.alpha*angle_loss + self.belta*UAD
-        return total_loss, angle_loss.item(), UAD.item()
-        
-    def mask_labels(self, labels, maskidx):
+    def mask_labels(self,labels,maskidx):
         mask = labels > self.action_tokenizer.action_token_begin_idx
         masked_labels = labels[mask]
         masked_labels = masked_labels.view(masked_labels.shape[0] // 7, 7)
-        for idx in range(7):
-            if idx not in maskidx:
-                masked_labels[:, idx] = -100
-        newlabels = []
-        for j in range(labels.shape[0]):
-            temp_label = labels[j]
-            temp_label[temp_label > 2] = masked_labels[j]
-            newlabels.append(temp_label.unsqueeze(0))
-        return torch.cat(newlabels, dim=0)
+        template_labels = torch.ones_like(masked_labels,device=masked_labels.device)*-100
+        for idx in maskidx:
+            template_labels[:, idx] = masked_labels[:, idx]
+        labels[labels > 2] = template_labels.view(-1)
+        return labels
 
+    def weighted_loss(self, logits, labels, maskid):
+        temp_label = labels[:,1:].to(labels.device) # (bs,seq_len) remove bos token
+        action_mask = temp_label > 2
+        temp_logits = logits[:,:,31744:32000] # (bs,seq_len,256) only consider the 256 classes for the target class
+        action_logits = temp_logits[:,-temp_label.shape[-1]-1:-1, :] # shift logits see modeling_llama.py line 1233
+        action_logits = action_logits[action_mask]
+        reweigh = torch.arange(1,257).to(logits.device)/256 # [1,,...256]
+        temp_prob = F.softmax(action_logits,dim=-1) # [bs,action_length,256]
+        reweighted_prob = (temp_prob * reweigh).sum(dim=-1)  # [bs, action_length]
+        hard_max_labels = temp_label[action_mask]
+        hard_max_labels[hard_max_labels > 31872]=31999
+        hard_max_labels[hard_max_labels <= 31872]=31744
+        hard_max_labels[hard_max_labels == 31999]=1/256
+        hard_max_labels[hard_max_labels == 31744]=1
+        UAD = self.cal_UAD(action_logits.argmax(dim=-1)+31744,temp_label[action_mask])
+        distance_loss = F.mse_loss(5*reweighted_prob.contiguous(), 5*hard_max_labels.float().contiguous())
 
+        # targeted max distance CE loss
+        # ce_action_logits = logits[:,-temp_label.shape[-1]-1:-1, :]
+        # ce_action_logits = ce_action_logits[action_mask]
+        # ce_hard_max_labels = temp_label[action_mask]
+        # ce_hard_max_labels[ce_hard_max_labels > 31872]=31744
+        # ce_hard_max_labels[ce_hard_max_labels <= 31872]=31999
+        # ce_loss = F.cross_entropy(ce_action_logits, ce_hard_max_labels)
+        # distance_loss = distance_loss + ce_loss
+        return distance_loss, UAD
+
+    def cal_UAD(self,pred,gt):
+        continuous_actions_gt = torch.tensor(
+            self.action_tokenizer.decode_token_ids_to_actions(gt.clone().detach().cpu().numpy())
+        )
+        continuous_actions_pred = torch.tensor(
+            self.action_tokenizer.decode_token_ids_to_actions(pred.clone().detach().cpu().numpy())
+        )
+        max_distance = torch.where(continuous_actions_gt > 0, torch.abs(continuous_actions_gt - (-1)), torch.abs(continuous_actions_gt - 1))
+        distance = torch.abs(continuous_actions_pred - continuous_actions_gt)
+        UAD = (distance / max_distance).mean()
+        return UAD
 
