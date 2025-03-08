@@ -30,7 +30,7 @@ from libero.libero import benchmark
 
 import wandb
 import sys
-sys.path.append("/spl_data/tw9146/openvla-main/attack-oneDOF-PositionORrotation/white_patch")
+sys.path.append("PATH TO/white_patch")
 from appply_random_transform import RandomPatchTransform
 import torch
 import os
@@ -180,16 +180,6 @@ def eval_libero(cfg) -> None:
             # Setup
             t = 0
             replay_images = []
-            # if cfg.task_suite_name == "libero_spatial":
-            #     max_steps = 220  # longest training demo has 193 steps
-            # elif cfg.task_suite_name == "libero_object":
-            #     max_steps = 280  # longest training demo has 254 steps
-            # elif cfg.task_suite_name == "libero_goal":
-            #     max_steps = 300  # longest training demo has 270 steps
-            # elif cfg.task_suite_name == "libero_10":
-            #     max_steps = 520  # longest training demo has 505 steps
-            # elif cfg.task_suite_name == "libero_90":
-            #     max_steps = 400  # longest training demo has 373 steps
             if cfg.task_suite_name == "libero_spatial":
                 max_steps = 193  # longest training demo has 193 steps
             elif cfg.task_suite_name == "libero_object":
