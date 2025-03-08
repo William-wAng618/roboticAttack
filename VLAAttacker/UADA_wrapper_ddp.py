@@ -5,7 +5,7 @@ import wandb
 import argparse
 import random
 import uuid
-from white_patch.UADA3 import OpenVLAAttacker
+from white_patch.UADA_ddp import OpenVLAAttacker
 import torch.distributed as dist
 # torchrun --nproc_per_node=4 VLAAttacker/UADA_wrapper3_ddp.py
 # CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 --master_port=29501 VLAAttacker/UADA_wrapper3_ddp.py
