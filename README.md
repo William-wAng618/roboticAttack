@@ -10,11 +10,7 @@
   <img src=".\fig\mainfig.png">
 </div>
 <p>
-Overall Adversarial Framework. The robot captures an input image, processes it through a vision-language model to generate
-tokens representing actions, and then uses an action de-tokenizer for discrete bin prediction. The model is optimized with adversarial
-objectives focusing on various discrepancies and geometries (i.e., UADA, UPA, TMA). Forward propagation is shown in black, and
-backpropagation is highlighted in pink. These objectives aim to maximize errors and minimize task performance, with visual emphasis on
-3D-space manipulation and a focus on generating adversarial perturbation δ during task execution, such as picking up a can.
+Overall Adversarial Framework. 
 </p>
 
 Built on top of [OpenVLA](https://github.com/openvla/openvla), a remarkable generalist vision-language-action model work. 
