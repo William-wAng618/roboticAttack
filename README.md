@@ -98,6 +98,11 @@ bash scripts/run_TMA.sh
 bash scripts/run_UADA.sh
 ```
 
+(b2) DDP ver For UADA
+```bash
+bash scripts/run_UADA_ddp.sh
+```
+
 (c) Untargeted Position-aware Attack (UPA)
 ```bash
 bash scripts/run_UPA.sh
