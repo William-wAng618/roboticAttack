@@ -21,8 +21,9 @@ Built on top of [OpenVLA](https://github.com/openvla/openvla), a remarkable gene
 - [2025-03-08]
   - Upate UADA.
   - Bug fix.
+  - Simple and flexible new evaluation tool (See in roboticAttack/evaluation_tool)
   - Release new ver. of Paper.
-  - ALL patches released (see in roboticAttack
+  - ALL patches released (See in roboticAttack
 /adversarial_patches).
 - [2024-11-26] Pre release
 
