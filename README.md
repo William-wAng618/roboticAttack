@@ -18,7 +18,7 @@ Built on top of [OpenVLA](https://github.com/openvla/openvla), a remarkable gene
 ---
 
 ## Latest Updates
-- [2025-03-08] Upate UADA, bug fix, release new ver. of Paper
+- [2025-03-08] Upate UADA, bug fix, release new ver. of Paper, ALL patches released.
 - [2024-11-26] Pre release
 
 
