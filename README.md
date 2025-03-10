@@ -18,7 +18,11 @@ Built on top of [OpenVLA](https://github.com/openvla/openvla), a remarkable gene
 ---
 
 ## Latest Updates
-- [2025-03-08] 1.Upate UADA. 2.Bug fix. 3.Release new ver. of Paper. 4.ALL patches released (see in roboticAttack
+- [2025-03-08]
+  - 1.Upate UADA.
+  - 2.Bug fix.
+  - 3.Release new ver. of Paper.
+  - 4.ALL patches released (see in roboticAttack
 /adversarial_patches).
 - [2024-11-26] Pre release
 
