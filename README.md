@@ -27,7 +27,10 @@ Built on top of [OpenVLA](https://github.com/openvla/openvla), a remarkable gene
 /adversarial_patches).
 - [2024-11-26] Pre release
 
-
+---
+## Important Resources
+- Adversarial Patches (See adversarial_patches)
+- Video (See videos)
 ---
 
 ## 1.Installation
