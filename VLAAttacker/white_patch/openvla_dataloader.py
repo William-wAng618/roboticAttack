@@ -224,16 +224,3 @@ def get_dataloader_forvis(batch_size,server,dataset,sample_num):
         # shuffle=True
     )
     return train_dataloader
-
-from torch.utils.data import DataLoader, Dataset
-
-# 自定义一个简单的 Dataset 类来包装数据
-class SampledDataset(Dataset):
-    def __init__(self, data):
-        self.data = data
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return self.data[idx]
