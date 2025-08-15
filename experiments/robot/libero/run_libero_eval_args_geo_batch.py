@@ -254,7 +254,7 @@ def eval_libero(cfg) -> None:
             # Save a replay video of the episode
             print(f"Saving replay video...")
             save_rollout_video(
-                replay_images, total_episodes, success=return_with_probability, task_description=task_description, log_file=log_file,exp_name=cfg.exp_name
+                replay_images, total_episodes, success=done, task_description=task_description, log_file=log_file,exp_name=cfg.exp_name
             )
 
             # Log current results
@@ -339,8 +339,7 @@ def parse_args():
 
     args = parser.parse_args()
     return args
-def return_with_probability():
-    return random.random() < 0.2  # 20% 概率返回 True
+
 if __name__ == "__main__":
     args = parse_args()
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(args.cudaid)
