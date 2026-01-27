@@ -150,3 +150,18 @@ High-level overview of repository/project file-tree:
 
 ---
 
+
+## 📚 Citation
+
+If you find this project useful, please consider citing our paper:
+
+```bibtex
+@InProceedings{Wang_2025_ICCV,
+    author    = {Wang, Taowen and Han, Cheng and Liang, James and Yang, Wenhao and Liu, Dongfang and Zhang, Luna Xinyu and Wang, Qifan and Luo, Jiebo and Tang, Ruixiang},
+    title     = {Exploring the Adversarial Vulnerabilities of Vision-Language-Action Models in Robotics},
+    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+    month     = {October},
+    year      = {2025},
+    pages     = {6948--6958}
+}
+
