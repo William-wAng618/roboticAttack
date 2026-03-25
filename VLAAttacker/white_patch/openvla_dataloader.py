@@ -154,3 +154,61 @@ def get_dataloader(batch_size,server,dataset,vla_path):
         num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
     )
     return train_dataloader, val_dataloader
+
+def get_dataset(dataset):
+    # vla_path: str = "openvla/openvla-7b"
+    current_script_dir = str(os.path.dirname(os.path.abspath(__file__)))
+    data_root_dir = Path(f"{PATH_TO}/dataset")
+    # dataset_name = "bridge_orig"
+    if dataset == "bridge_orig":
+        vla_path = "openvla/openvla-7b"
+    elif dataset == "libero_spatial":
+        vla_path = "openvla/openvla-7b-finetuned-libero-spatial"
+        dataset += "_no_noops"
+    elif dataset == "libero_object":
+        vla_path = "openvla/openvla-7b-finetuned-libero-object"
+        dataset += "_no_noops"
+    elif dataset == "libero_goal":
+        vla_path = "openvla/openvla-7b-finetuned-libero-goal"
+        dataset += "_no_noops"
+    elif dataset == "libero_10":
+        vla_path = "openvla/openvla-7b-finetuned-libero-10"
+        dataset += "_no_noops"
+    else:
+        assert False, "Invalid dataset"
+    shuffle_buffer_size = 100_000
+    image_aug = False
+    AutoConfig.register("openvla", OpenVLAConfig)
+    AutoImageProcessor.register(OpenVLAConfig, PrismaticImageProcessor)
+    AutoProcessor.register(OpenVLAConfig, PrismaticProcessor)
+    AutoModelForVision2Seq.register(OpenVLAConfig, OpenVLAForActionPrediction)
+
+    # Load OpenVLA Processor and Model using HF AutoClasses
+    processor = AutoProcessor.from_pretrained(vla_path, trust_remote_code=True)
+
+    # Create Action Tokenizer
+    action_tokenizer = ActionTokenizer(processor.tokenizer)
+    batch_transform = RLDSBatchTransform( #
+        action_tokenizer,
+        processor.tokenizer,
+        prompt_builder_fn=PurePromptBuilder if "v01" not in vla_path else VicunaV15ChatPromptBuilder,
+    )
+    vla_dataset_train = RLDSDataset(
+        data_root_dir,
+        dataset,
+        batch_transform,
+        resize_resolution=tuple([224,224]),
+        shuffle_buffer_size=shuffle_buffer_size,
+        train=True,
+        image_aug=image_aug,
+    )
+    vla_dataset_val = RLDSDataset(
+        data_root_dir,
+        dataset,
+        batch_transform,
+        resize_resolution=tuple([224,224]),
+        shuffle_buffer_size=shuffle_buffer_size,
+        train=False,
+        image_aug=image_aug,
+    )
+    return vla_dataset_train, vla_dataset_val
