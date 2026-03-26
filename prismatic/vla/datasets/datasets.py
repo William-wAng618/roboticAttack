@@ -23,6 +23,8 @@ from prismatic.vla.datasets.rlds import make_interleaved_dataset, make_single_da
 from prismatic.vla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights
 from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
 
+import itertools
+
 # HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
 IGNORE_INDEX = -100
 
@@ -142,6 +144,14 @@ class RLDSDataset(IterableDataset):
 
     def make_dataset(self, rlds_config):
         return make_interleaved_dataset(**rlds_config)
+
+    def shard(self, num_shards, index):
+        self.dataset = self.dataset.shard(num_shards=num_shards, index=index)
+        return self
+
+    # def __iter__(self) -> Dict[str, Any]:
+    #     for rlds_batch in iter(self.dataset):
+    #         yield self.batch_transform(rlds_batch)
 
     def __iter__(self) -> Dict[str, Any]:
         for rlds_batch in self.dataset.as_numpy_iterator():
